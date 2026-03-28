@@ -1,62 +1,94 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { supabase } from '@/lib/supabase'
 import { getRank, RANKS } from '@/lib/constants'
 
 export default function Home() {
-  // Estado temporal (luego lo traeremos de Supabase)
+  const [user, setUser] = useState<any>(null)
   const [xp, setXp] = useState(0)
+  const [loading, setLoading] = useState(true)
+  const [email, setEmail] = useState('')
+
+  // 1. Cargar datos al iniciar
+  useEffect(() => {
+    const fetchData = async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        setUser(user)
+        const { data } = await supabase.from('profiles').select('xp').eq('id', user.id).single()
+        if (data) setXp(data.xp)
+      }
+      setLoading(false)
+    }
+    fetchData()
+  }, [])
+
+  // 2. Función de Login (Magic Link)
+  const handleLogin = async () => {
+    const { error } = await supabase.auth.signInWithOtp({ email })
+    if (error) alert('Error: ' + error.message)
+    else alert('¡Revisa tu correo para entrar!')
+  }
+
+  // 3. Registrar Actividad y Subir XP
+  const addXP = async (amount: number) => {
+    const newXP = xp + amount
+    const oldRank = getRank(xp)
+    const newRank = getRank(newXP)
+
+    // Efectos si sube de rango
+    if (newRank.name !== oldRank.name) {
+      const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2000/2000-preview.mp3')
+      audio.play()
+      document.body.classList.add('flash-white')
+      setTimeout(() => document.body.classList.remove('flash-white'), 500)
+    }
+
+    setXp(newXP)
+    await supabase.from('profiles').update({ xp: newXP }).eq('id', user?.id)
+  }
+
+  if (loading) return <div className="min-h-screen bg-black flex items-center justify-center">Cargando...</div>
+
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-neutral-950 text-white flex flex-col items-center justify-center p-6">
+        <div className="bg-neutral-900 p-8 rounded-3xl border border-neutral-800 w-full max-w-sm space-y-4">
+          <h2 className="text-2xl font-black italic">ENTRAR AL RPG</h2>
+          <input 
+            type="email" 
+            placeholder="Tu email" 
+            className="w-full p-4 rounded-xl bg-black border border-neutral-700 focus:border-orange-500 outline-none"
+            onChange={(e) => setEmail(e.target.value)}
+          />
+          <button onClick={handleLogin} className="w-full bg-white text-black font-black py-4 rounded-xl uppercase">Enviar Enlace Mágico</button>
+        </div>
+      </div>
+    )
+  }
+
   const currentRank = getRank(xp)
-  
-  // Calcular progreso para la barra
-  const nextRank = RANKS.find(r => r.minXP > xp) || RANKS[RANKS.length - 1]
-  const progress = Math.min((xp / nextRank.minXP) * 100, 100)
 
   return (
-    <main className="min-h-screen bg-neutral-950 text-white flex flex-col items-center justify-center p-6 font-sans">
-      <div className="max-w-md w-full space-y-8 bg-neutral-900 p-8 rounded-3xl border border-neutral-800 shadow-2xl">
-        
-        {/* Encabezado de Rango */}
-        <div className="text-center space-y-2">
-          <p className="text-neutral-500 text-xs font-black tracking-[0.2em] uppercase">Rango Actual</p>
-          <div className={`inline-block px-8 py-3 rounded-xl border-2 ${currentRank.borderColor} ${currentRank.bg} ${currentRank.color} font-black text-3xl italic tracking-tighter shadow-[0_0_20px_rgba(0,0,0,0.5)]`}>
+    <main className="min-h-screen bg-neutral-950 text-white flex flex-col items-center p-6">
+      <style>{`.flash-white { background-color: white !important; transition: background 0.1s; }`}</style>
+      
+      <div className="max-w-md w-full space-y-8 mt-20 bg-neutral-900 p-8 rounded-3xl border border-neutral-800">
+        <div className="text-center">
+          <div className={`inline-block px-8 py-3 rounded-xl border-2 ${currentRank.borderColor} ${currentRank.bg} ${currentRank.color} font-black text-3xl italic tracking-tighter`}>
             {currentRank.name}
           </div>
+          <p className="mt-4 text-neutral-400 font-bold">{xp} XP TOTALES</p>
         </div>
 
-        {/* Barra de Progreso Animada */}
-        <div className="space-y-2">
-          <div className="flex justify-between text-xs font-bold text-neutral-400">
-            <span>{xp} XP</span>
-            <span>{nextRank.minXP} XP</span>
-          </div>
-          <div className="h-4 w-full bg-neutral-800 rounded-full overflow-hidden border border-neutral-700">
-            <div 
-              className={`h-full transition-all duration-500 ease-out bg-gradient-to-r from-orange-600 to-yellow-400 shadow-[0_0_15px_rgba(234,88,12,0.5)]`}
-              style={{ width: `${progress}%` }}
-            />
-          </div>
-          <p className="text-center text-[10px] text-neutral-500 uppercase tracking-widest pt-1">
-            Faltan {nextRank.minXP - xp} XP para {nextRank.name}
-          </p>
-        </div>
+        <button 
+          onClick={() => addXP(50)}
+          className="w-full bg-orange-600 hover:bg-orange-500 text-white font-black py-5 rounded-2xl shadow-lg transition-transform active:scale-95 uppercase italic text-xl"
+        >
+          Registrar Disciplina +50 XP
+        </button>
 
-        {/* Acciones de Disciplina */}
-        <div className="grid grid-cols-1 gap-4">
-          <button 
-            onClick={() => setXp(prev => prev + 50)}
-            className="group relative overflow-hidden bg-white text-black font-black py-4 rounded-2xl transition-all active:scale-95 hover:bg-neutral-200"
-          >
-            <span className="relative z-10 text-lg uppercase italic">Registrar Gimnasio +50 XP</span>
-          </button>
-          
-          <button 
-            onClick={() => setXp(0)}
-            className="text-neutral-600 text-xs hover:text-red-500 transition-colors uppercase font-bold"
-          >
-            Resetear Progreso (Debug)
-          </button>
-        </div>
-
+        <button onClick={() => supabase.auth.signOut()} className="text-xs text-neutral-600 w-full">Cerrar Sesión</button>
       </div>
     </main>
   )
