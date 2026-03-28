@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
-import { getRank, RANKS } from '@/lib/constants'
+import { getRank } from '@/lib/constants'
 
 const ACTIVIDADES = [
   { id: 'gym', label: 'Gimnasio', xp: 50, icon: '💪' },
@@ -14,8 +14,10 @@ export default function Home() {
   const [user, setUser] = useState<any>(null)
   const [xp, setXp] = useState(0)
   const [loading, setLoading] = useState(true)
-  const [uploading, setUploading] = useState(false)
+  const [isRegistering, setIsRegistering] = useState(false)
   const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [uploading, setUploading] = useState(false)
   const [category, setCategory] = useState('gym')
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -32,13 +34,18 @@ export default function Home() {
     checkUser()
   }, [])
 
-  const handleLogin = async () => {
-    const { error } = await supabase.auth.signInWithOtp({ 
-      email,
-      options: { emailRedirectTo: window.location.origin }
-    })
-    if (error) alert('Error: ' + error.message)
-    else alert('¡Revisa tu correo para entrar!')
+  const handleAuth = async () => {
+    setLoading(true)
+    if (isRegistering) {
+      const { data, error } = await supabase.auth.signUp({ email, password })
+      if (error) alert(error.message)
+      else alert('¡Cuenta creada! Ya puedes iniciar sesión.')
+    } else {
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+      if (error) alert('Error: Credenciales inválidas')
+      else window.location.reload()
+    }
+    setLoading(false)
   }
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -59,39 +66,51 @@ export default function Home() {
 
       await supabase.from('profiles').update({ xp: newXP }).eq('id', user.id)
       await supabase.from('activity_logs').insert([{ 
-        user_id: user.id, 
-        category, 
-        xp_earned: puntos, 
-        photo_url: publicUrl 
+        user_id: user.id, category, xp_earned: puntos, photo_url: publicUrl 
       }])
 
       setXp(newXP)
       alert(`¡${act?.label} registrado! +${puntos} XP 🔥`)
     } catch (err: any) {
-      alert('Error: ' + err.message)
+      alert('Error de subida: Asegúrate de que el bucket "evidencias" sea público.')
     } finally {
       setUploading(false)
     }
   }
 
-  if (loading) return <div className="min-h-screen bg-black flex items-center justify-center text-white">Cargando sistema...</div>
+  if (loading) return <div className="min-h-screen bg-black flex items-center justify-center text-white font-black italic">CARGANDO...</div>
 
-  // PANTALLA DE LOGIN
   if (!user) {
     return (
       <main className="min-h-screen bg-neutral-950 text-white flex flex-col items-center justify-center p-6">
-        <div className="bg-neutral-900 p-8 rounded-3xl border border-neutral-800 w-full max-w-sm space-y-6 shadow-2xl">
+        <div className="bg-neutral-900 p-8 rounded-[2rem] border border-neutral-800 w-full max-w-sm space-y-6 shadow-2xl">
           <div className="text-center">
-            <h2 className="text-3xl font-black italic tracking-tighter text-orange-500">CLAN DISCIPLINA</h2>
-            <p className="text-neutral-500 text-xs mt-2 uppercase tracking-widest">Ingresa para subir de rango</p>
+            <h2 className="text-3xl font-black italic text-orange-500 tracking-tighter">
+              {isRegistering ? 'ÚNETE AL CLAN' : 'BIENVENIDO'}
+            </h2>
+            <p className="text-neutral-500 text-[10px] uppercase tracking-widest mt-1">Disciplina y Constancia</p>
           </div>
-          <input 
-            type="email" 
-            placeholder="Tu email real" 
-            className="w-full p-4 rounded-xl bg-black border border-neutral-700 focus:border-orange-500 outline-none transition-all"
-            onChange={(e) => setEmail(e.target.value)}
-          />
-          <button onClick={handleLogin} className="w-full bg-white text-black font-black py-4 rounded-xl uppercase hover:bg-orange-500 transition-colors shadow-lg">Enviar Enlace</button>
+          
+          <div className="space-y-3">
+            <input 
+              type="email" placeholder="Correo" 
+              className="w-full p-4 rounded-xl bg-black border border-neutral-800 focus:border-orange-500 outline-none"
+              onChange={(e) => setEmail(e.target.value)}
+            />
+            <input 
+              type="password" placeholder="Contraseña" 
+              className="w-full p-4 rounded-xl bg-black border border-neutral-800 focus:border-orange-500 outline-none"
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </div>
+
+          <button onClick={handleAuth} className="w-full bg-white text-black font-black py-4 rounded-xl uppercase hover:bg-orange-500 transition-all active:scale-95">
+            {isRegistering ? 'Crear mi cuenta' : 'Entrar al sistema'}
+          </button>
+
+          <button onClick={() => setIsRegistering(!isRegistering)} className="w-full text-xs text-neutral-500 font-bold hover:text-white uppercase">
+            {isRegistering ? '¿Ya tienes cuenta? Entra' : '¿No tienes cuenta? Regístrate'}
+          </button>
         </div>
       </main>
     )
@@ -99,26 +118,22 @@ export default function Home() {
 
   const currentRank = getRank(xp)
 
-  // PANTALLA DASHBOARD (Ya logueado)
   return (
     <main className="min-h-screen bg-black text-white p-6 pb-24 font-sans">
       <div className="max-w-md mx-auto space-y-8">
         <header className="flex justify-between items-center">
-          <div>
-            <h1 className="text-xl font-black italic uppercase">Dashboard</h1>
-            <p className="text-neutral-500 text-xs">{user.email}</p>
-          </div>
-          <button onClick={() => supabase.auth.signOut()} className="text-[10px] bg-neutral-800 px-3 py-1 rounded-full text-neutral-400 font-bold uppercase">Salir</button>
+          <h1 className="text-xl font-black italic uppercase tracking-tighter text-orange-500">Disciplina App</h1>
+          <button onClick={() => supabase.auth.signOut().then(() => window.location.reload())} className="text-[10px] bg-neutral-900 border border-neutral-800 px-3 py-1 rounded-full text-neutral-400 font-black uppercase">Cerrar Sesión</button>
         </header>
 
-        <section className={`p-6 rounded-[2rem] border-2 transition-all shadow-2xl ${currentRank.borderColor} ${currentRank.bg}`}>
-          <p className="text-[10px] font-black uppercase opacity-50 tracking-[0.2em] mb-1">Rango Actual</p>
+        <section className={`p-6 rounded-[2rem] border-2 shadow-2xl ${currentRank.borderColor} ${currentRank.bg}`}>
+          <p className="text-[10px] font-black uppercase opacity-50 tracking-[0.2em] mb-1">Status Actual</p>
           <h2 className={`text-5xl font-black italic tracking-tighter ${currentRank.color}`}>{currentRank.name}</h2>
           <div className="mt-4 flex items-center gap-2">
             <div className="h-2 flex-1 bg-black/40 rounded-full overflow-hidden">
-              <div className="h-full bg-current transition-all" style={{ width: `${(xp % 200) / 2}%` }}></div>
+              <div className="h-full bg-current transition-all duration-500" style={{ width: `${(xp % 200) / 2}%` }}></div>
             </div>
-            <span className="text-xs font-bold">{xp} XP</span>
+            <span className="text-xs font-bold tracking-tighter">{xp} XP</span>
           </div>
         </section>
 
@@ -127,10 +142,10 @@ export default function Home() {
             <button 
               key={act.id}
               onClick={() => setCategory(act.id)}
-              className={`p-4 rounded-2xl border-2 transition-all flex flex-col items-center gap-1 ${category === act.id ? 'border-orange-500 bg-orange-500/10 scale-[1.02]' : 'border-neutral-800 bg-neutral-900 opacity-60'}`}
+              className={`p-4 rounded-2xl border-2 transition-all flex flex-col items-center gap-1 ${category === act.id ? 'border-orange-500 bg-orange-500/10 scale-105 shadow-[0_0_20px_rgba(234,88,12,0.2)]' : 'border-neutral-900 bg-neutral-900/40 opacity-50'}`}
             >
               <span className="text-3xl">{act.icon}</span>
-              <span className="font-black text-xs uppercase">{act.label}</span>
+              <span className="font-black text-[10px] uppercase tracking-widest">{act.label}</span>
               <span className="text-[10px] font-bold text-orange-500">+{act.xp} XP</span>
             </button>
           ))}
@@ -139,16 +154,11 @@ export default function Home() {
         <button 
           onClick={() => fileInputRef.current?.click()}
           disabled={uploading}
-          className="w-full bg-orange-600 hover:bg-orange-500 text-white font-black py-6 rounded-3xl shadow-[0_10px_30px_rgba(234,88,12,0.3)] transition-all active:scale-95 uppercase italic text-xl"
+          className="w-full bg-orange-600 hover:bg-orange-500 text-white font-black py-6 rounded-3xl shadow-xl transition-all active:scale-95 uppercase italic text-xl disabled:opacity-50"
         >
-          {uploading ? 'SUBIENDO...' : 'REGISTRAR EVIDENCIA 📸'}
+          {uploading ? 'PROCESANDO...' : 'REGISTRAR ACTIVIDAD 📸'}
         </button>
         <input type="file" accept="image/*" capture="environment" className="hidden" ref={fileInputRef} onChange={handleUpload} />
-
-        <nav className="fixed bottom-6 left-6 right-6 bg-neutral-900/90 backdrop-blur-xl border border-neutral-800 p-4 rounded-3xl flex justify-around shadow-2xl">
-          <button className="text-orange-500 font-bold text-xs uppercase">🏠 Inicio</button>
-          <button onClick={() => window.location.href='/leaderboard'} className="text-neutral-500 font-bold text-xs uppercase hover:text-white transition-colors">🏆 Ranking</button>
-        </nav>
       </div>
     </main>
   )
